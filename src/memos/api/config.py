@@ -95,6 +95,7 @@ class APIConfig:
         return {
             "uri": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
             "user": os.getenv("NEO4J_USER", "neo4j"),
+            "db_name": "default",
             "password": os.getenv("NEO4J_PASSWORD", "12345678"),
             "auto_create": True,
         }
