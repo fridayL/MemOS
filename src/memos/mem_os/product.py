@@ -544,6 +544,9 @@ class MOSProduct(MOSCore):
                 )
 
         # Register the MemCube
+        logger.info(
+            f"Registering MemCube {mem_cube_id} with cube config {mem_cube.config.model_dump(mode='json')}"
+        )
         self.mem_cubes[mem_cube_id] = mem_cube
 
     def user_register(
