@@ -30,7 +30,6 @@ from memos.mem_os.product import MOSProduct
 from memos.memos_tools.notification_service import get_error_bot_function, get_online_bot_function
 
 
-print(f"product_router.py {__name__}")
 logger = get_logger(__name__)
 router = APIRouter(prefix="/product", tags=["Product API"])
 
@@ -289,9 +288,6 @@ def chat_complete(chat_req: ChatCompleteRequest):
     try:
         mos_product = get_mos_product_instance()
 
-        print(f"Chat complete request: {chat_req}")
-        logger.info(f"Chat complete request: {chat_req}")
-
         # Collect all responses from the generator
         content, references = mos_product.chat(
             query=chat_req.query,
@@ -304,11 +300,6 @@ def chat_complete(chat_req: ChatCompleteRequest):
             top_k=chat_req.top_k,
             threshold=chat_req.threshold,
         )
-
-        print(f"Chat completed successfully: {content}")
-        print(f"Chat completed references: {references}")
-        logger.info(f"Chat completed successfully: {content}")
-        logger.info(f"Chat completed references: {references}")
 
         # Return the complete response
         return {
