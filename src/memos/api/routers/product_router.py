@@ -77,12 +77,6 @@ def set_config(config):
     return SimpleResponse(message="Configuration set successfully")
 
 
-@router.post("/test", summary="Test", response_model=SimpleResponse)
-def test():
-    """Test."""
-    return SimpleResponse(message="Test successfully")
-
-
 @router.post("/users/register", summary="Register a new user", response_model=UserRegisterResponse)
 def register_user(user_req: UserRegisterRequest, g: Annotated[G, Depends(get_g_object)]):
     """Register a new user with configuration and default cube."""

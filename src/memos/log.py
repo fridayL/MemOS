@@ -19,7 +19,7 @@ from memos.api.context.context import get_current_trace_id
 # Load environment variables
 load_dotenv()
 
-selected_log_level = logging.DEBUG if settings.DEBUG else logging.WARNING
+selected_log_level = logging.DEBUG
 
 
 def _setup_logfile() -> Path:
@@ -169,12 +169,12 @@ LOGGING_CONFIG = {
         },
     },
     "root": {  # Root logger handles all logs
-        "level": logging.DEBUG if settings.DEBUG else logging.INFO,
+        "level": logging.DEBUG,
         "handlers": ["console", "file"],
     },
     "loggers": {
         "memos": {
-            "level": logging.DEBUG if settings.DEBUG else logging.INFO,
+            "level": logging.DEBUG,
             "propagate": True,  # Let logs bubble up to root
         },
     },

@@ -87,7 +87,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
         # Log request completion
         logger.info(
-            f"Request completed: {request.method} {request.url.path} - trace_id: {trace_id} - status: {response.status_code}"
+            f"Request completed: {request.method} {request.url.path} status: {response.status_code}"
         )
 
         # Add trace_id to response headers for debugging
