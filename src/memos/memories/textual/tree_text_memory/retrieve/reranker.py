@@ -86,16 +86,18 @@ class MemoryReranker:
 
     def _merge_rank_memory(
         self, 
-        items_with_embeddings: list[TextualMemoryItem]
+        items_with_embeddings: list[TextualMemoryItem],
+        merge_field: List[str]=["source", "memory"],
     ) -> list[str]:
         """
         Merge memory items with original dialogue.
         Args:
             items_with_embeddings (list[TextualMemoryItem]): List of memory items with embeddings.
+            merge_field (List[str]): List of fields to merge.
         Returns:
             list[str]: List of memory and concat orginal memory.
         """
-        original_dialogue = [[item.metadata.source, item.metadata.memory] for item in items_with_embeddings]
+        original_dialogue = [[item.metadata.get(field) for field in merge_field] for item in items_with_embeddings]
         dialogue_list = [process_source(items) for items in original_dialogue]
         return dialogue_list
     
