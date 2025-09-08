@@ -40,7 +40,7 @@ def batch_reranking(
     documents: list[str],
     top_k: int,
 ):
-    url = "http://106.75.235.231:8082/v1/rerank"
+    url = "xxxxx"
     headers = {
         "Content-Type": "application/json"
     }
@@ -48,22 +48,23 @@ def batch_reranking(
         "model": "bge-reranker-v2-m3",
         "query": query,
         "documents": documents,
-        "top_k": top_k,
     }
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers, data=json.dumps(payload))
     return response.json()
 
 
-def process_source(item: List[List[Dict | str , str]] | None = None) -> List[str]:
+def process_source(items: List[List[Dict | str , str]] | None = None) -> List[str]:
     """
     source: List[str | Dict | List] | None = None
     Returns:
         List[str]: Embedding of the source.
     """
     source_data = []
-    for item in source:
-        if isinstance(item, str):
+    for item in items:
+        source, memory = item
+        if isinstance(source, str):
             source_data.append(item)
+    source_data += source
     return "\n".join(source_data)
 
 
@@ -91,12 +92,11 @@ class MemoryReranker:
         Merge memory items with original dialogue.
         Args:
             items_with_embeddings (list[TextualMemoryItem]): List of memory items with embeddings.
-            top_k (int): Number of top results to return.
         Returns:
             list[str]: List of memory and concat orginal memory.
         """
         original_dialogue = [[item.metadata.source, item.metadata.memory] for item in items_with_embeddings]
-        dialogue_list = [process_source(item) for item in original_dialogue]
+        dialogue_list = [process_source(items) for items in original_dialogue]
         return dialogue_list
     
     def _rerank_memory(
@@ -114,7 +114,7 @@ class MemoryReranker:
         Returns:
             list[tuple[TextualMemoryItem, float]]: Ranked list of memory items with ranking score.
         """
-        return batch_reranking(query, dialogue_list, top_k)
+        return batch_reranking(query, dialogue_list)
 
     def rerank(
         self,
