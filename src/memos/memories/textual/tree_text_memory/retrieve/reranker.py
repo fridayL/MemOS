@@ -97,7 +97,24 @@ class MemoryReranker:
         """
         original_dialogue = [[item.metadata.source, item.metadata.memory] for item in items_with_embeddings]
         dialogue_list = [process_source(item) for item in original_dialogue]
-        return dialogue_list[:top_k]
+        return dialogue_list
+    
+    def _rerank_memory(
+        self,
+        query: str,
+        dialogue_list: list[str],
+        top_k: int,
+    ) -> list[tuple[TextualMemoryItem, float]]:
+        """
+        Rerank memory items by relevance to task.
+        Args:
+            query (str): Original task.
+            dialogue_list (list[str]): List of memory and concat orginal memory.
+            top_k (int): Number of top results to return.
+        Returns:
+            list[tuple[TextualMemoryItem, float]]: Ranked list of memory items with ranking score.
+        """
+        return batch_reranking(query, dialogue_list, top_k)
 
     def rerank(
         self,
@@ -125,7 +142,7 @@ class MemoryReranker:
         embeddings = [item.metadata.embedding for item in items_with_embeddings]
         
         # Step 1-1: Get original dialogue and docs 
-        items_with_embeddings, dialogue_list = self._merge_rank_memory(items_with_embeddings)
+        dialogue_list = self._merge_rank_memory(items_with_embeddings)
 
 
         if not embeddings:
