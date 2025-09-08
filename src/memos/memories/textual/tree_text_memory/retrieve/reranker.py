@@ -35,6 +35,37 @@ def batch_cosine_similarity(
 
     return similarities.tolist()
 
+def batch_reranking(
+    query: str,
+    documents: list[str],
+    top_k: int,
+):
+    url = "http://106.75.235.231:8082/v1/rerank"
+    headers = {
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "bge-reranker-v2-m3",
+        "query": query,
+        "documents": documents,
+        "top_k": top_k,
+    }
+    response = requests.post(url, headers=headers, json=data)
+    return response.json()
+
+
+def process_source(item: List[List[Dict | str , str]] | None = None) -> List[str]:
+    """
+    source: List[str | Dict | List] | None = None
+    Returns:
+        List[str]: Embedding of the source.
+    """
+    source_data = []
+    for item in source:
+        if isinstance(item, str):
+            source_data.append(item)
+    return "\n".join(source_data)
+
 
 class MemoryReranker:
     """
@@ -51,6 +82,22 @@ class MemoryReranker:
             "concept": 1.0,
             "fact": 1.0,
         }
+
+    def _merge_rank_memory(
+        self, 
+        items_with_embeddings: list[TextualMemoryItem]
+    ) -> list[str]:
+        """
+        Merge memory items with original dialogue.
+        Args:
+            items_with_embeddings (list[TextualMemoryItem]): List of memory items with embeddings.
+            top_k (int): Number of top results to return.
+        Returns:
+            list[str]: List of memory and concat orginal memory.
+        """
+        original_dialogue = [[item.metadata.source, item.metadata.memory] for item in items_with_embeddings]
+        dialogue_list = [process_source(item) for item in original_dialogue]
+        return dialogue_list[:top_k]
 
     def rerank(
         self,
@@ -71,11 +118,15 @@ class MemoryReranker:
             parsed_goal (dict): Structured task representation.
 
         Returns:
-            list(tuple): Ranked list of memory items with similarity score.
+            list(tuple): Ranked list of memory items with ranking score.
         """
         # Step 1: Filter out items without embeddings
         items_with_embeddings = [item for item in graph_results if item.metadata.embedding]
         embeddings = [item.metadata.embedding for item in items_with_embeddings]
+        
+        # Step 1-1: Get original dialogue and docs 
+        items_with_embeddings, dialogue_list = self._merge_rank_memory(items_with_embeddings)
+
 
         if not embeddings:
             return [(item, 0.5) for item in graph_results[:top_k]]
