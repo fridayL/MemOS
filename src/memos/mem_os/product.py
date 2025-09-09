@@ -557,7 +557,7 @@ class MOSProduct(MOSCore):
                         send_online_bot_notification_async,
                     )
 
-                    # 准备通知数据
+                    # Prepare notification data
                     chat_data = {
                         "query": query,
                         "user_id": user_id,
@@ -693,7 +693,7 @@ class MOSProduct(MOSCore):
             thread.start()
 
     def _filter_memories_by_threshold(
-        self, memories: list[TextualMemoryItem], threshold: float = 0.50, min_num: int = 3
+        self, memories: list[TextualMemoryItem], threshold: float = 0.52, min_num: int = 0
     ) -> list[TextualMemoryItem]:
         """
         Filter memories by threshold.
@@ -1024,7 +1024,7 @@ class MOSProduct(MOSCore):
             elif self.config.chat_model.backend == "vllm":
                 response_stream = self.chat_llm.generate_stream(current_messages)
         else:
-            if self.config.chat_model.backend in ["huggingface", "vllm"]:
+            if self.config.chat_model.backend in ["huggingface", "vllm", "openai"]:
                 response_stream = self.chat_llm.generate_stream(current_messages)
             else:
                 response_stream = self.chat_llm.generate(current_messages)
@@ -1041,7 +1041,7 @@ class MOSProduct(MOSCore):
         full_response = ""
         token_count = 0
         # Use tiktoken for proper token-based chunking
-        if self.config.chat_model.backend not in ["huggingface", "vllm"]:
+        if self.config.chat_model.backend not in ["huggingface", "vllm", "openai"]:
             # For non-huggingface backends, we need to collect the full response first
             full_response_text = ""
             for chunk in response_stream:
