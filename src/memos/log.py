@@ -107,7 +107,8 @@ class CustomLoggerRequestHandler(logging.Handler):
                     attribute_key = key[len("CUSTOM_LOGGER_ATTRIBUTE_") :].lower()
                     post_content[attribute_key] = value
 
-            self._session.post(logger_url, headers=headers, json=post_content, timeout=5)
+            res = self._session.post(logger_url, headers=headers, json=post_content, timeout=5)
+            print(f"Custom logger response: {res.text}")
         except Exception:
             # Silently ignore errors to avoid affecting main application
             pass
@@ -164,7 +165,7 @@ LOGGING_CONFIG = {
             "filters": ["trace_id_filter"],
         },
         "custom_logger": {
-            "level": selected_log_level,
+            "level": "INFO",
             "class": "memos.log.CustomLoggerRequestHandler",
             "formatter": "simplified",
         },
