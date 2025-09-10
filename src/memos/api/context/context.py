@@ -7,7 +7,7 @@ and request isolation.
 """
 
 import uuid
-
+import os
 from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any
@@ -116,6 +116,9 @@ TraceIdGetter = Callable[[], str | None]
 # Global variable to hold the trace_id getter function
 _trace_id_getter: TraceIdGetter | None = None
 
+def generate_trace_id() -> str:
+    """Generate a random trace_id."""
+    return os.urandom(16).hex()
 
 def set_trace_id_getter(getter: TraceIdGetter) -> None:
     """

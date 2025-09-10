@@ -11,16 +11,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from memos.api.context.context import RequestContext, set_request_context
+from memos.api.context.context import RequestContext, set_request_context, generate_trace_id
 
 
 logger = logging.getLogger(__name__)
-
-
-def generate_trace_id() -> str:
-    """Generate a random trace_id."""
-    return os.urandom(16).hex()
-
 
 def extract_trace_id_from_headers(request: Request) -> str | None:
     """Extract trace_id from various possible headers with priority: g-trace-id > x-trace-id > trace-id."""
