@@ -13,6 +13,8 @@ COPY . /app/
 # Set Python import path
 ENV PYTHONPATH=/app/src
 
+RUN pip install pymysql
+
 # Expose port
 EXPOSE 9002
 

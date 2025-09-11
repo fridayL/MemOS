@@ -12,7 +12,7 @@ import requests
 from dotenv import load_dotenv
 
 from memos import settings
-from memos.api.context.context import get_current_trace_id
+from memos.api.context.context import generate_trace_id, get_current_trace_id
 from memos.api.context.context_thread import ContextThreadPoolExecutor
 
 
@@ -39,9 +39,9 @@ class TraceIDFilter(logging.Filter):
     def filter(self, record):
         try:
             trace_id = get_current_trace_id()
-            record.trace_id = trace_id if trace_id else "no-trace-id"
+            record.trace_id = trace_id if trace_id else generate_trace_id()
         except Exception:
-            record.trace_id = "no-trace-id"
+            record.trace_id = generate_trace_id()
         return True
 
 
@@ -107,7 +107,8 @@ class CustomLoggerRequestHandler(logging.Handler):
                     attribute_key = key[len("CUSTOM_LOGGER_ATTRIBUTE_") :].lower()
                     post_content[attribute_key] = value
 
-            self._session.post(logger_url, headers=headers, json=post_content, timeout=5)
+            res = self._session.post(logger_url, headers=headers, json=post_content, timeout=5)
+            print(f"Custom logger response: {res.text}")
         except Exception:
             # Silently ignore errors to avoid affecting main application
             pass
@@ -164,7 +165,7 @@ LOGGING_CONFIG = {
             "filters": ["trace_id_filter"],
         },
         "custom_logger": {
-            "level": selected_log_level,
+            "level": "INFO",
             "class": "memos.log.CustomLoggerRequestHandler",
             "formatter": "simplified",
         },
