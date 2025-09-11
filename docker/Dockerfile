@@ -4,8 +4,6 @@ FROM registry.cn-shanghai.aliyuncs.com/memtensor/memos:amd-base
 # Set Hugging Face mirror
 ENV HF_ENDPOINT=https://hf-mirror.com
 
-RUN pip install pymysql
-
 RUN rm -rf /app/
 
 WORKDIR /app
