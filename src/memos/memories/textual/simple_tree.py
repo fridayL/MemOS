@@ -113,6 +113,8 @@ class SimpleTreeTextMemory(TreeTextMemory):
         """
         Get the current size of each memory type.
         This delegates to the MemoryManager.
+        Args:
+            user_name (str, optional): The user name to search for if not will use self.user_name for graph search.
         """
         return self.memory_manager.get_current_memory_size(user_name=user_name)
 
@@ -147,11 +149,12 @@ class SimpleTreeTextMemory(TreeTextMemory):
                 - Values are exact-match conditions.
                 Example: {"user_id": "123", "session_id": "abc"}
                 If None, no additional filtering is applied.
+            user_name (str, optional): The user name to search for if not will use self.user_name for graph search.
         Returns:
             list[TextualMemoryItem]: List of matching memories.
         """
         if (self.internet_retriever is not None) and manual_close_internet:
-            logger.warning(
+            logger.info(
                 "Internet retriever is init by config , but  this search set manual_close_internet is True  and will close it"
             )
             searcher = Searcher(
@@ -176,7 +179,7 @@ class SimpleTreeTextMemory(TreeTextMemory):
         )
 
     def get_relevant_subgraph(
-        self, query: str, top_k: int = 5, depth: int = 2, center_status: str = "activated"
+        self, query: str, top_k: int = 5, depth: int = 2, center_status: str = "activated", user_name: str | None = None
     ) -> dict[str, Any]:
         """
         Find and merge the local neighborhood sub-graphs of the top-k
@@ -196,6 +199,7 @@ class SimpleTreeTextMemory(TreeTextMemory):
              top_k (int, optional): How many top similar nodes to retrieve. Default is 5.
              depth (int, optional): The neighborhood depth (number of hops). Default is 2.
              center_status (str, optional): Status condition the center node must satisfy (e.g., 'active').
+             user_name (str, optional): The user name to search for if not will use self.user_name for graph search.
 
          Returns:
              dict[str, Any]: A subgraph dict with:
@@ -207,7 +211,7 @@ class SimpleTreeTextMemory(TreeTextMemory):
         query_embedding = self.embedder.embed([query])[0]
 
         # Step 2: Get top-1 similar node
-        similar_nodes = self.graph_store.search_by_embedding(query_embedding, top_k=top_k)
+        similar_nodes = self.graph_store.search_by_embedding(query_embedding, top_k=top_k, user_name=user_name)
         if not similar_nodes:
             logger.info("No similar nodes found for query embedding.")
             return {"core_id": None, "nodes": [], "edges": []}
@@ -222,7 +226,7 @@ class SimpleTreeTextMemory(TreeTextMemory):
             score = node["score"]
 
             subgraph = self.graph_store.get_subgraph(
-                center_id=core_id, depth=depth, center_status=center_status
+                center_id=core_id, depth=depth, center_status=center_status, user_name=user_name
             )
 
             if not subgraph["core_node"]:
@@ -274,21 +278,26 @@ class SimpleTreeTextMemory(TreeTextMemory):
     def get_by_ids(self, memory_ids: list[str]) -> list[TextualMemoryItem]:
         raise NotImplementedError
 
-    def get_all(self) -> dict:
+    def get_all(self, user_name: str | None = None) -> dict:
         """Get all memories.
+        Args:
+            user_name (str, optional): The user name to search for if not will use self.user_name for graph search.
         Returns:
             list[TextualMemoryItem]: List of all memories.
         """
-        all_items = self.graph_store.export_graph()
+        all_items = self.graph_store.export_graph(user_name=user_name)
         return all_items
 
     def delete(self, memory_ids: list[str]) -> None:
         raise NotImplementedError
 
-    def delete_all(self) -> None:
-        """Delete all memories and their relationships from the graph store."""
+    def delete_all(self, user_name: str | None = None) -> None:
+        """Delete all memories and their relationships from the graph store.
+        Args:
+            user_name (str, optional): The user name to search for if not will use self.user_name for graph search.
+        """
         try:
-            self.graph_store.clear()
+            self.graph_store.clear(user_name=user_name)
             logger.info("All memories and edges have been deleted from the graph.")
         except Exception as e:
             logger.error(f"An error occurred while deleting all memories: {e}")
