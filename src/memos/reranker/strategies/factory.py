@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from .concat_background import ConcatBackgroundStrategy
 from .single_turn import SingleTurnStrategy
+from .singleturn_outall import SingleTurnOutAllStrategy
+from .singleturn_outfilter import SingleTurnOutFilterStrategy
 from .singleturn_outmem import SingleTurnOutMemStrategy
 
 
@@ -19,6 +21,8 @@ class RerankerStrategyFactory:
         "single_turn": SingleTurnStrategy,
         "concat_background": ConcatBackgroundStrategy,
         "singleturn_outmem": SingleTurnOutMemStrategy,
+        "singleturn_outall": SingleTurnOutAllStrategy,
+        "singleturn_outfilter": SingleTurnOutFilterStrategy,
     }
 
     @classmethod

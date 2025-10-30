@@ -68,6 +68,7 @@ class DialogueRankingTracker:
         memory: str,
         chat_time: str | None = None,
         concat_format: Literal["user_assistant", "user_only"] = "user_assistant",
+        split_source: bool = False,
     ) -> str:
         """Add a dialogue pair and return its unique ID."""
         user_content = extract_content(user_msg)
@@ -93,6 +94,22 @@ class DialogueRankingTracker:
         )
 
         self.dialogue_pairs.append(dialogue_pair)
+        if split_source:
+            pair_id = f"{memory_id}_{pair_index}_memory"
+
+            dialogue_pair = DialoguePair(
+                pair_id=pair_id,
+                memory_id=memory_id,
+                pair_index=pair_index,
+                user_msg=user_msg,
+                assistant_msg=assistant_msg,
+                combined_text=memory,
+                memory=memory,
+                chat_time=chat_time,
+            )
+
+            self.dialogue_pairs.append(dialogue_pair)
+
         return pair_id
 
     def get_documents_for_ranking(self, concat_memory: bool = True) -> list[str]:
