@@ -343,81 +343,92 @@ def _post_process_pref_mem(
 @router.post("/search", summary="Search memories", response_model=SearchResponse)
 def search_memories(search_req: APISearchRequest):
     """Search memories for a specific user."""
-    # Create UserContext object - how to assign values
-    user_context = UserContext(
-        user_id=search_req.user_id,
-        mem_cube_id=search_req.mem_cube_id,
-        session_id=search_req.session_id or "default_session",
-    )
-    logger.info(f"Search user_id is: {user_context.mem_cube_id}")
-    memories_result: MOSSearchResult = {
-        "text_mem": [],
-        "act_mem": [],
-        "para_mem": [],
-        "pref_mem": [],
-        "pref_note": "",
-    }
-
-    search_mode = search_req.mode
-
-    def _search_text():
-        if search_mode == SearchMode.FAST:
-            formatted_memories = fast_search_memories(
-                search_req=search_req, user_context=user_context
-            )
-        elif search_mode == SearchMode.FINE:
-            formatted_memories = fine_search_memories(
-                search_req=search_req, user_context=user_context
-            )
-        elif search_mode == SearchMode.MIXTURE:
-            formatted_memories = mix_search_memories(
-                search_req=search_req, user_context=user_context
-            )
-        else:
-            logger.error(f"Unsupported search mode: {search_mode}")
-            raise HTTPException(status_code=400, detail=f"Unsupported search mode: {search_mode}")
-        return formatted_memories
-
-    def _search_pref():
-        if os.getenv("ENABLE_PREFERENCE_MEMORY", "false").lower() != "true":
-            return []
-        results = naive_mem_cube.pref_mem.search(
-            query=search_req.query,
-            top_k=search_req.pref_top_k,
-            info={
-                "user_id": search_req.user_id,
-                "session_id": search_req.session_id,
-                "chat_history": search_req.chat_history,
-            },
+    try:
+        # Create UserContext object - how to assign values
+        user_context = UserContext(
+            user_id=search_req.user_id,
+            mem_cube_id=search_req.mem_cube_id,
+            session_id=search_req.session_id or "default_session",
         )
-        return [_format_memory_item(data) for data in results]
-
-    with ContextThreadPoolExecutor(max_workers=2) as executor:
-        text_future = executor.submit(_search_text)
-        pref_future = executor.submit(_search_pref)
-        text_formatted_memories = text_future.result()
-        pref_formatted_memories = pref_future.result()
-
-    memories_result["text_mem"].append(
-        {
-            "cube_id": search_req.mem_cube_id,
-            "memories": text_formatted_memories,
+        logger.info(f"Search user_id is: {user_context.mem_cube_id}")
+        memories_result: MOSSearchResult = {
+            "text_mem": [],
+            "act_mem": [],
+            "para_mem": [],
+            "pref_mem": [],
+            "pref_note": "",
         }
-    )
 
-    memories_result = _post_process_pref_mem(
-        memories_result,
-        pref_formatted_memories,
-        search_req.mem_cube_id,
-        search_req.include_preference,
-    )
+        search_mode = search_req.mode
 
-    logger.info(f"Search memories result: {memories_result}")
+        def _search_text():
+            if search_mode == SearchMode.FAST:
+                formatted_memories = fast_search_memories(
+                    search_req=search_req, user_context=user_context
+                )
+            elif search_mode == SearchMode.FINE:
+                formatted_memories = fine_search_memories(
+                    search_req=search_req, user_context=user_context
+                )
+            elif search_mode == SearchMode.MIXTURE:
+                formatted_memories = mix_search_memories(
+                    search_req=search_req, user_context=user_context
+                )
+            else:
+                logger.error(f"Unsupported search mode: {search_mode}")
+                raise HTTPException(status_code=400, detail=f"Unsupported search mode: {search_mode}")
+            return formatted_memories
 
-    return SearchResponse(
-        message="Search completed successfully",
-        data=memories_result,
-    )
+        def _search_pref():
+            if os.getenv("ENABLE_PREFERENCE_MEMORY", "false").lower() != "true":
+                return []
+            results = naive_mem_cube.pref_mem.search(
+                query=search_req.query,
+                top_k=search_req.pref_top_k,
+                info={
+                    "user_id": search_req.user_id,
+                    "session_id": search_req.session_id,
+                    "chat_history": search_req.chat_history,
+                },
+            )
+            return [_format_memory_item(data) for data in results]
+
+        with ContextThreadPoolExecutor(max_workers=2) as executor:
+            text_future = executor.submit(_search_text)
+            pref_future = executor.submit(_search_pref)
+            text_formatted_memories = text_future.result()
+            pref_formatted_memories = pref_future.result()
+
+        memories_result["text_mem"].append(
+            {
+                "cube_id": search_req.mem_cube_id,
+                "memories": text_formatted_memories,
+            }
+        )
+
+        memories_result = _post_process_pref_mem(
+            memories_result,
+            pref_formatted_memories,
+            search_req.mem_cube_id,
+            search_req.include_preference,
+        )
+
+        logger.info(f"Search memories result: {memories_result}")
+
+        return SearchResponse(
+            message="Search completed successfully",
+            data=memories_result,
+        )
+        
+    except HTTPException:
+        # Re-raise HTTPExceptions to maintain specific error codes
+        raise
+    except ValueError as err:
+        logger.error(f"Invalid search parameters for user {search_req.user_id}: {traceback.format_exc()}")
+        raise HTTPException(status_code=400, detail=f"Invalid search parameters: {str(err)}") from err
+    except Exception as err:
+        logger.error(f"Failed to search memories for user {search_req.user_id}: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to search memories: {str(err)}") from err
 
 
 def mix_search_memories(
@@ -496,137 +507,145 @@ def fast_search_memories(
 @router.post("/add", summary="Add memories", response_model=MemoryResponse)
 def add_memories(add_req: APIADDRequest):
     """Add memories for a specific user."""
-    # Create UserContext object - how to assign values
-    user_context = UserContext(
-        user_id=add_req.user_id,
-        mem_cube_id=add_req.mem_cube_id,
-        session_id=add_req.session_id or "default_session",
-    )
-    target_session_id = add_req.session_id
-    if not target_session_id:
-        target_session_id = "default_session"
-
-    # If text memory backend works in async mode, submit tasks to scheduler
     try:
-        sync_mode = getattr(naive_mem_cube.text_mem, "mode", "sync")
-    except Exception:
-        sync_mode = "sync"
-    logger.info(f"Add sync_mode mode is: {sync_mode}")
+        # Create UserContext object - how to assign values
+        user_context = UserContext(
+            user_id=add_req.user_id,
+            mem_cube_id=add_req.mem_cube_id,
+            session_id=add_req.session_id or "default_session",
+        )
+        target_session_id = add_req.session_id
+        if not target_session_id:
+            target_session_id = "default_session"
 
-    def _process_text_mem() -> list[dict[str, str]]:
-        memories_local = mem_reader.get_memory(
-            [add_req.messages],
-            type="chat",
-            info={
-                "user_id": add_req.user_id,
-                "session_id": target_session_id,
-            },
-            mode="fast" if sync_mode == "async" else "fine",
-        )
-        flattened_local = [mm for m in memories_local for mm in m]
-        logger.info(f"Memory extraction completed for user {add_req.user_id}")
-        mem_ids_local: list[str] = naive_mem_cube.text_mem.add(
-            flattened_local,
-            user_name=user_context.mem_cube_id,
-        )
-        logger.info(
-            f"Added {len(mem_ids_local)} memories for user {add_req.user_id} "
-            f"in session {add_req.session_id}: {mem_ids_local}"
-        )
-        if sync_mode == "async":
-            try:
-                message_item_read = ScheduleMessageItem(
-                    user_id=add_req.user_id,
-                    session_id=target_session_id,
-                    mem_cube_id=add_req.mem_cube_id,
-                    mem_cube=naive_mem_cube,
-                    label=MEM_READ_LABEL,
-                    content=json.dumps(mem_ids_local),
-                    timestamp=datetime.utcnow(),
-                    user_name=add_req.mem_cube_id,
-                )
-                mem_scheduler.submit_messages(messages=[message_item_read])
-                logger.info(f"2105Submit messages!!!!!: {json.dumps(mem_ids_local)}")
-            except Exception as e:
-                logger.error(f"Failed to submit async memory tasks: {e}", exc_info=True)
-        else:
-            message_item_add = ScheduleMessageItem(
-                user_id=add_req.user_id,
-                session_id=target_session_id,
-                mem_cube_id=add_req.mem_cube_id,
-                mem_cube=naive_mem_cube,
-                label=ADD_LABEL,
-                content=json.dumps(mem_ids_local),
-                timestamp=datetime.utcnow(),
-                user_name=add_req.mem_cube_id,
-            )
-            mem_scheduler.submit_messages(messages=[message_item_add])
-        return [
-            {
-                "memory": memory.memory,
-                "memory_id": memory_id,
-                "memory_type": memory.metadata.memory_type,
-            }
-            for memory_id, memory in zip(mem_ids_local, flattened_local, strict=False)
-        ]
+        # If text memory backend works in async mode, submit tasks to scheduler
+        try:
+            sync_mode = getattr(naive_mem_cube.text_mem, "mode", "sync")
+        except Exception:
+            sync_mode = "sync"
+        logger.info(f"Add sync_mode mode is: {sync_mode}")
 
-    def _process_pref_mem() -> list[dict[str, str]]:
-        if os.getenv("ENABLE_PREFERENCE_MEMORY", "false").lower() != "true":
-            return []
-        # Follow async behavior similar to core.py: enqueue when async
-        if sync_mode == "async":
-            try:
-                messages_list = [add_req.messages]
-                message_item_pref = ScheduleMessageItem(
-                    user_id=add_req.user_id,
-                    session_id=target_session_id,
-                    mem_cube_id=add_req.mem_cube_id,
-                    mem_cube=naive_mem_cube,
-                    label=PREF_ADD_LABEL,
-                    content=json.dumps(messages_list),
-                    timestamp=datetime.utcnow(),
-                )
-                mem_scheduler.submit_messages(messages=[message_item_pref])
-                logger.info("Submitted preference add to scheduler (async mode)")
-            except Exception as e:
-                logger.error(f"Failed to submit PREF_ADD task: {e}", exc_info=True)
-            return []
-        else:
-            pref_memories_local = naive_mem_cube.pref_mem.get_memory(
+        def _process_text_mem() -> list[dict[str, str]]:
+            memories_local = mem_reader.get_memory(
                 [add_req.messages],
                 type="chat",
                 info={
                     "user_id": add_req.user_id,
                     "session_id": target_session_id,
                 },
+                mode="fast" if sync_mode == "async" else "fine",
             )
-            pref_ids_local: list[str] = naive_mem_cube.pref_mem.add(pref_memories_local)
+            flattened_local = [mm for m in memories_local for mm in m]
+            logger.info(f"Memory extraction completed for user {add_req.user_id}")
+            mem_ids_local: list[str] = naive_mem_cube.text_mem.add(
+                flattened_local,
+                user_name=user_context.mem_cube_id,
+            )
             logger.info(
-                f"Added {len(pref_ids_local)} preferences for user {add_req.user_id} "
-                f"in session {add_req.session_id}: {pref_ids_local}"
+                f"Added {len(mem_ids_local)} memories for user {add_req.user_id} "
+                f"in session {add_req.session_id}: {mem_ids_local}"
             )
+            if sync_mode == "async":
+                try:
+                    message_item_read = ScheduleMessageItem(
+                        user_id=add_req.user_id,
+                        session_id=target_session_id,
+                        mem_cube_id=add_req.mem_cube_id,
+                        mem_cube=naive_mem_cube,
+                        label=MEM_READ_LABEL,
+                        content=json.dumps(mem_ids_local),
+                        timestamp=datetime.utcnow(),
+                        user_name=add_req.mem_cube_id,
+                    )
+                    mem_scheduler.submit_messages(messages=[message_item_read])
+                    logger.info(f"2105Submit messages!!!!!: {json.dumps(mem_ids_local)}")
+                except Exception as e:
+                    logger.error(f"Failed to submit async memory tasks: {e}", exc_info=True)
+            else:
+                message_item_add = ScheduleMessageItem(
+                    user_id=add_req.user_id,
+                    session_id=target_session_id,
+                    mem_cube_id=add_req.mem_cube_id,
+                    mem_cube=naive_mem_cube,
+                    label=ADD_LABEL,
+                    content=json.dumps(mem_ids_local),
+                    timestamp=datetime.utcnow(),
+                    user_name=add_req.mem_cube_id,
+                )
+                mem_scheduler.submit_messages(messages=[message_item_add])
             return [
                 {
                     "memory": memory.memory,
                     "memory_id": memory_id,
-                    "memory_type": memory.metadata.preference_type,
+                    "memory_type": memory.metadata.memory_type,
                 }
-                for memory_id, memory in zip(pref_ids_local, pref_memories_local, strict=False)
+                for memory_id, memory in zip(mem_ids_local, flattened_local, strict=False)
             ]
 
-    with ContextThreadPoolExecutor(max_workers=2) as executor:
-        text_future = executor.submit(_process_text_mem)
-        pref_future = executor.submit(_process_pref_mem)
-        text_response_data = text_future.result()
-        pref_response_data = pref_future.result()
+        def _process_pref_mem() -> list[dict[str, str]]:
+            if os.getenv("ENABLE_PREFERENCE_MEMORY", "false").lower() != "true":
+                return []
+            # Follow async behavior similar to core.py: enqueue when async
+            if sync_mode == "async":
+                try:
+                    messages_list = [add_req.messages]
+                    message_item_pref = ScheduleMessageItem(
+                        user_id=add_req.user_id,
+                        session_id=target_session_id,
+                        mem_cube_id=add_req.mem_cube_id,
+                        mem_cube=naive_mem_cube,
+                        label=PREF_ADD_LABEL,
+                        content=json.dumps(messages_list),
+                        timestamp=datetime.utcnow(),
+                    )
+                    mem_scheduler.submit_messages(messages=[message_item_pref])
+                    logger.info("Submitted preference add to scheduler (async mode)")
+                except Exception as e:
+                    logger.error(f"Failed to submit PREF_ADD task: {e}", exc_info=True)
+                return []
+            else:
+                pref_memories_local = naive_mem_cube.pref_mem.get_memory(
+                    [add_req.messages],
+                    type="chat",
+                    info={
+                        "user_id": add_req.user_id,
+                        "session_id": target_session_id,
+                    },
+                )
+                pref_ids_local: list[str] = naive_mem_cube.pref_mem.add(pref_memories_local)
+                logger.info(
+                    f"Added {len(pref_ids_local)} preferences for user {add_req.user_id} "
+                    f"in session {add_req.session_id}: {pref_ids_local}"
+                )
+                return [
+                    {
+                        "memory": memory.memory,
+                        "memory_id": memory_id,
+                        "memory_type": memory.metadata.preference_type,
+                    }
+                    for memory_id, memory in zip(pref_ids_local, pref_memories_local, strict=False)
+                ]
 
-    logger.info(f"add_memories Text response data: {text_response_data}")
-    logger.info(f"add_memories Pref response data: {pref_response_data}")
+        with ContextThreadPoolExecutor(max_workers=2) as executor:
+            text_future = executor.submit(_process_text_mem)
+            pref_future = executor.submit(_process_pref_mem)
+            text_response_data = text_future.result()
+            pref_response_data = pref_future.result()
 
-    return MemoryResponse(
-        message="Memory added successfully",
-        data=text_response_data + pref_response_data,
-    )
+        logger.info(f"add_memories Text response data: {text_response_data}")
+        logger.info(f"add_memories Pref response data: {pref_response_data}")
+
+        return MemoryResponse(
+            message="Memory added successfully",
+            data=text_response_data + pref_response_data,
+        )
+        
+    except ValueError as err:
+        logger.error(f"Invalid add parameters for user {add_req.user_id}: {traceback.format_exc()}")
+        raise HTTPException(status_code=400, detail=f"Invalid add parameters: {str(err)}") from err
+    except Exception as err:
+        logger.error(f"Failed to add memories for user {add_req.user_id}: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to add memories: {str(err)}") from err
 
 
 @router.get("/scheduler/status", summary="Get scheduler running status")
