@@ -22,11 +22,14 @@ MessageRole: TypeAlias = Literal["user", "assistant", "system"]
 
 
 # Message structure
-class MessageDict(TypedDict):
+class MessageDict(TypedDict, total=False):
     """Typed dictionary for chat message dictionaries."""
 
     role: MessageRole
     content: str
+    chat_time: str | None  # Optional timestamp for the message, format is not
+    # restricted, it can be any vague or precise time string.
+    message_id: str | None  # Optional unique identifier for the message
 
 
 # Message collections
@@ -53,3 +56,25 @@ class MOSSearchResult(TypedDict):
     text_mem: list[dict[str, str | list[TextualMemoryItem]]]
     act_mem: list[dict[str, str | list[ActivationMemoryItem]]]
     para_mem: list[dict[str, str | list[ParametricMemoryItem]]]
+
+
+# ─── API Types ────────────────────────────────────────────────────────────────────
+# for API Permission
+Permission: TypeAlias = Literal["read", "write", "delete", "execute"]
+
+
+# Message structure
+class PermissionDict(TypedDict, total=False):
+    """Typed dictionary for chat message dictionaries."""
+
+    permissions: list[Permission]
+    mem_cube_id: str
+
+
+class UserContext(BaseModel):
+    """Model to represent user context."""
+
+    user_id: str | None = None
+    mem_cube_id: str | None = None
+    session_id: str | None = None
+    operation: list[PermissionDict] | None = None

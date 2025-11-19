@@ -1,4 +1,8 @@
+import hashlib
+import json
+
 from collections.abc import Generator
+from typing import ClassVar
 
 import openai
 
@@ -7,27 +11,65 @@ from memos.llms.base import BaseLLM
 from memos.llms.utils import remove_thinking_tags
 from memos.log import get_logger
 from memos.types import MessageList
+from memos.utils import timed
 
 
 logger = get_logger(__name__)
 
 
 class OpenAILLM(BaseLLM):
-    """OpenAI LLM class."""
+    """OpenAI LLM class with singleton pattern."""
+
+    _instances: ClassVar[dict] = {}  # Class variable to store instances
+
+    def __new__(cls, config: OpenAILLMConfig) -> "OpenAILLM":
+        config_hash = cls._get_config_hash(config)
+
+        if config_hash not in cls._instances:
+            logger.info(f"Creating new OpenAI LLM instance for config hash: {config_hash}")
+            instance = super().__new__(cls)
+            cls._instances[config_hash] = instance
+        else:
+            logger.info(f"Reusing existing OpenAI LLM instance for config hash: {config_hash}")
+
+        return cls._instances[config_hash]
 
     def __init__(self, config: OpenAILLMConfig):
+        # Avoid duplicate initialization
+        if hasattr(self, "_initialized"):
+            return
+
         self.config = config
         self.client = openai.Client(api_key=config.api_key, base_url=config.api_base)
+        self._initialized = True
+        logger.info("OpenAI LLM instance initialized")
 
-    def generate(self, messages: MessageList) -> str:
-        """Generate a response from OpenAI LLM."""
+    @classmethod
+    def _get_config_hash(cls, config: OpenAILLMConfig) -> str:
+        """Generate hash value of configuration"""
+        config_dict = config.model_dump()
+        config_str = json.dumps(config_dict, sort_keys=True)
+        return hashlib.md5(config_str.encode()).hexdigest()
+
+    @classmethod
+    def clear_cache(cls):
+        """Clear all cached instances"""
+        cls._instances.clear()
+        logger.info("OpenAI LLM instance cache cleared")
+
+    @timed(log=True, log_prefix="OpenAI LLM")
+    def generate(self, messages: MessageList, **kwargs) -> str:
+        """Generate a response from OpenAI LLM, optionally overriding generation params."""
+        temperature = kwargs.get("temperature", self.config.temperature)
+        max_tokens = kwargs.get("max_tokens", self.config.max_tokens)
+        top_p = kwargs.get("top_p", self.config.top_p)
         response = self.client.chat.completions.create(
             model=self.config.model_name_or_path,
             messages=messages,
             extra_body=self.config.extra_body,
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-            top_p=self.config.top_p,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
         )
         logger.info(f"Response from OpenAI: {response.model_dump_json()}")
         response_content = response.choices[0].message.content
@@ -36,6 +78,7 @@ class OpenAILLM(BaseLLM):
         else:
             return response_content
 
+    @timed(log=True, log_prefix="OpenAI LLM")
     def generate_stream(self, messages: MessageList, **kwargs) -> Generator[str, None, None]:
         """Stream response from OpenAI LLM with optional reasoning support."""
         response = self.client.chat.completions.create(
@@ -71,15 +114,50 @@ class OpenAILLM(BaseLLM):
 
 
 class AzureLLM(BaseLLM):
-    """Azure OpenAI LLM class."""
+    """Azure OpenAI LLM class with singleton pattern."""
+
+    _instances: ClassVar[dict] = {}  # Class variable to store instances
+
+    def __new__(cls, config: AzureLLMConfig):
+        # Generate hash value of config as cache key
+        config_hash = cls._get_config_hash(config)
+
+        if config_hash not in cls._instances:
+            logger.info(f"Creating new Azure LLM instance for config hash: {config_hash}")
+            instance = super().__new__(cls)
+            cls._instances[config_hash] = instance
+        else:
+            logger.info(f"Reusing existing Azure LLM instance for config hash: {config_hash}")
+
+        return cls._instances[config_hash]
 
     def __init__(self, config: AzureLLMConfig):
+        # Avoid duplicate initialization
+        if hasattr(self, "_initialized"):
+            return
+
         self.config = config
         self.client = openai.AzureOpenAI(
             azure_endpoint=config.base_url,
             api_version=config.api_version,
             api_key=config.api_key,
         )
+        self._initialized = True
+        logger.info("Azure LLM instance initialized")
+
+    @classmethod
+    def _get_config_hash(cls, config: AzureLLMConfig) -> str:
+        """Generate hash value of configuration"""
+        # Convert config to dict and sort to ensure consistency
+        config_dict = config.model_dump()
+        config_str = json.dumps(config_dict, sort_keys=True)
+        return hashlib.md5(config_str.encode()).hexdigest()
+
+    @classmethod
+    def clear_cache(cls):
+        """Clear all cached instances"""
+        cls._instances.clear()
+        logger.info("Azure LLM instance cache cleared")
 
     def generate(self, messages: MessageList) -> str:
         """Generate a response from Azure OpenAI LLM."""

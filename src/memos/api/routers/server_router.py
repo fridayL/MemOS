@@ -1,0 +1,221 @@
+"""
+Server API Router for MemOS (Class-based handlers version).
+
+This router demonstrates the improved architecture using class-based handlers
+with dependency injection, providing better modularity and maintainability.
+
+Comparison with function-based approach:
+- Cleaner code: No need to pass dependencies in every endpoint
+- Better testability: Easy to mock handler dependencies
+- Improved extensibility: Add new handlers or modify existing ones easily
+- Clear separation of concerns: Router focuses on routing, handlers handle business logic
+"""
+
+import os
+import random as _random
+import socket
+
+from fastapi import APIRouter
+
+from memos.api import handlers
+from memos.api.handlers.add_handler import AddHandler
+from memos.api.handlers.base_handler import HandlerDependencies
+from memos.api.handlers.chat_handler import ChatHandler
+from memos.api.handlers.search_handler import SearchHandler
+from memos.api.product_models import (
+    APIADDRequest,
+    APIChatCompleteRequest,
+    APISearchRequest,
+    ChatRequest,
+    GetMemoryRequest,
+    MemoryResponse,
+    SearchResponse,
+    SuggestionRequest,
+    SuggestionResponse,
+)
+from memos.log import get_logger
+from memos.mem_scheduler.base_scheduler import BaseScheduler
+
+
+logger = get_logger(__name__)
+
+router = APIRouter(prefix="/product", tags=["Server API"])
+
+# Instance ID for identifying this server instance in logs and responses
+INSTANCE_ID = f"{socket.gethostname()}:{os.getpid()}:{_random.randint(1000, 9999)}"
+
+# Initialize all server components
+components = handlers.init_server()
+
+# Create dependency container
+dependencies = HandlerDependencies.from_init_server(components)
+
+# Initialize all handlers with dependency injection
+search_handler = SearchHandler(dependencies)
+add_handler = AddHandler(dependencies)
+chat_handler = ChatHandler(
+    dependencies, search_handler, add_handler, online_bot=components.get("online_bot")
+)
+
+# Extract commonly used components for function-based handlers
+# (These can be accessed from the components dict without unpacking all of them)
+mem_scheduler: BaseScheduler = components["mem_scheduler"]
+llm = components["llm"]
+naive_mem_cube = components["naive_mem_cube"]
+
+
+# =============================================================================
+# Search API Endpoints
+# =============================================================================
+
+
+@router.post("/search", summary="Search memories", response_model=SearchResponse)
+def search_memories(search_req: APISearchRequest):
+    """
+    Search memories for a specific user.
+
+    This endpoint uses the class-based SearchHandler for better code organization.
+    """
+    return search_handler.handle_search_memories(search_req)
+
+
+# =============================================================================
+# Add API Endpoints
+# =============================================================================
+
+
+@router.post("/add", summary="Add memories", response_model=MemoryResponse)
+def add_memories(add_req: APIADDRequest):
+    """
+    Add memories for a specific user.
+
+    This endpoint uses the class-based AddHandler for better code organization.
+    """
+    return add_handler.handle_add_memories(add_req)
+
+
+# =============================================================================
+# Scheduler API Endpoints
+# =============================================================================
+
+
+@router.get("/scheduler/status", summary="Get scheduler running status")
+def scheduler_status(user_name: str | None = None):
+    """Get scheduler running status."""
+    return handlers.scheduler_handler.handle_scheduler_status(
+        user_name=user_name,
+        mem_scheduler=mem_scheduler,
+        instance_id=INSTANCE_ID,
+    )
+
+
+@router.post("/scheduler/wait", summary="Wait until scheduler is idle for a specific user")
+def scheduler_wait(
+    user_name: str,
+    timeout_seconds: float = 120.0,
+    poll_interval: float = 0.2,
+):
+    """Wait until scheduler is idle for a specific user."""
+    return handlers.scheduler_handler.handle_scheduler_wait(
+        user_name=user_name,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+        mem_scheduler=mem_scheduler,
+    )
+
+
+@router.get("/scheduler/wait/stream", summary="Stream scheduler progress for a user")
+def scheduler_wait_stream(
+    user_name: str,
+    timeout_seconds: float = 120.0,
+    poll_interval: float = 0.2,
+):
+    """Stream scheduler progress via Server-Sent Events (SSE)."""
+    return handlers.scheduler_handler.handle_scheduler_wait_stream(
+        user_name=user_name,
+        timeout_seconds=timeout_seconds,
+        poll_interval=poll_interval,
+        mem_scheduler=mem_scheduler,
+        instance_id=INSTANCE_ID,
+    )
+
+
+# =============================================================================
+# Chat API Endpoints
+# =============================================================================
+
+
+@router.post("/chat/complete", summary="Chat with MemOS (Complete Response)")
+def chat_complete(chat_req: APIChatCompleteRequest):
+    """
+    Chat with MemOS for a specific user. Returns complete response (non-streaming).
+
+    This endpoint uses the class-based ChatHandler.
+    """
+    return chat_handler.handle_chat_complete(chat_req)
+
+
+@router.post("/chat", summary="Chat with MemOS")
+def chat(chat_req: ChatRequest):
+    """
+    Chat with MemOS for a specific user. Returns SSE stream.
+
+    This endpoint uses the class-based ChatHandler which internally
+    composes SearchHandler and AddHandler for a clean architecture.
+    """
+    return chat_handler.handle_chat_stream(chat_req)
+
+
+# =============================================================================
+# Suggestion API Endpoints
+# =============================================================================
+
+
+@router.post(
+    "/suggestions",
+    summary="Get suggestion queries",
+    response_model=SuggestionResponse,
+)
+def get_suggestion_queries(suggestion_req: SuggestionRequest):
+    """Get suggestion queries for a specific user with language preference."""
+    return handlers.suggestion_handler.handle_get_suggestion_queries(
+        user_id=suggestion_req.mem_cube_id,
+        language=suggestion_req.language,
+        message=suggestion_req.message,
+        llm=llm,
+        naive_mem_cube=naive_mem_cube,
+    )
+
+
+# =============================================================================
+# Memory Retrieval API Endpoints
+# =============================================================================
+
+
+@router.post("/get_all", summary="Get all memories for user", response_model=MemoryResponse)
+def get_all_memories(memory_req: GetMemoryRequest):
+    """
+    Get all memories or subgraph for a specific user.
+
+    If search_query is provided, returns a subgraph based on the query.
+    Otherwise, returns all memories of the specified type.
+    """
+    if memory_req.search_query:
+        return handlers.memory_handler.handle_get_subgraph(
+            user_id=memory_req.user_id,
+            mem_cube_id=(
+                memory_req.mem_cube_ids[0] if memory_req.mem_cube_ids else memory_req.user_id
+            ),
+            query=memory_req.search_query,
+            top_k=20,
+            naive_mem_cube=naive_mem_cube,
+        )
+    else:
+        return handlers.memory_handler.handle_get_all_memories(
+            user_id=memory_req.user_id,
+            mem_cube_id=(
+                memory_req.mem_cube_ids[0] if memory_req.mem_cube_ids else memory_req.user_id
+            ),
+            memory_type=memory_req.memory_type or "text_mem",
+            naive_mem_cube=naive_mem_cube,
+        )

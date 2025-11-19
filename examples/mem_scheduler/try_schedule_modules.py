@@ -12,8 +12,8 @@ from memos.configs.mem_os import MOSConfig
 from memos.configs.mem_scheduler import AuthConfig
 from memos.log import get_logger
 from memos.mem_cube.general import GeneralMemCube
+from memos.mem_scheduler.analyzer.mos_for_test_scheduler import MOSForTestScheduler
 from memos.mem_scheduler.general_scheduler import GeneralScheduler
-from memos.mem_scheduler.mos_for_test_scheduler import MOSForTestScheduler
 from memos.mem_scheduler.schemas.general_schemas import (
     NOT_APPLICABLE_TYPE,
 )
@@ -136,11 +136,11 @@ if __name__ == "__main__":
 
     # set configs
     mos_config = MOSConfig.from_yaml_file(
-        f"{BASE_DIR}/examples/data/config/mem_scheduler/memos_config_w_scheduler_and_openai.yaml"
+        f"{BASE_DIR}/examples/data/config/mem_scheduler/memos_config_w_scheduler.yaml"
     )
 
     mem_cube_config = GeneralMemCubeConfig.from_yaml_file(
-        f"{BASE_DIR}/examples/data/config/mem_scheduler/mem_cube_config.yaml"
+        f"{BASE_DIR}/examples/data/config/mem_scheduler/mem_cube_config_neo4j.yaml"
     )
 
     # default local graphdb uri
@@ -176,6 +176,7 @@ if __name__ == "__main__":
     mos.register_mem_cube(
         mem_cube_name_or_path=mem_cube_name_or_path, mem_cube_id=mem_cube_id, user_id=user_id
     )
+    mos.mem_scheduler.current_mem_cube = mem_cube
 
     mos.add(conversations, user_id=user_id, mem_cube_id=mem_cube_id)
 
