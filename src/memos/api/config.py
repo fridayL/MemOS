@@ -635,7 +635,7 @@ class APIConfig:
                 "max_results": 15,
                 "num_per_request": 10,
                 "reader": {
-                    "backend": reader_config["backend"],
+                    "backend": "multimodal_struct",
                     "config": {
                         "llm": {
                             "backend": "openai",
@@ -911,6 +911,132 @@ class APIConfig:
         }
 
     @staticmethod
+    def get_tool_agent_mem_reader_config() -> dict[str, Any]:
+        """Build tool_agent mem_reader config from env vars.
+
+        ToolAgentMemReader extends MultiModalStructMemReader, only overriding chat string_fine extraction.
+        All doc/skill/tool/pref logic remains unchanged; requires full multimodal_struct fields.
+
+        Env vars:
+          TOOL_AGENT_API_URL          4B service endpoint (required)
+          TOOL_AGENT_API_KEY          API key
+          TOOL_AGENT_MODEL            Model name (default: qwen3-4B)
+          TOOL_AGENT_ENABLE_THINKING  Enable thinking mode (default: true)
+          TOOL_AGENT_TEMPERATURE      Sampling temperature (default: 0.7)
+          TOOL_AGENT_MAX_TOKENS       Max tokens per call (default: 4096)
+          TOOL_AGENT_MAX_ROUNDS       Max ReAct rounds (default: 6)
+          TOOL_AGENT_SEARCH_TOP_K     search_memory top-k (default: 5)
+        """
+        reader_config = APIConfig.get_reader_config()
+        return {
+            "backend": "tool_agent",
+            "config": {
+                # ToolAgent-specific fields
+                "api_url": os.getenv(
+                    "TOOL_AGENT_API_URL", "http://localhost:8000/v1/chat/completions"
+                ),
+                "api_key": os.getenv("TOOL_AGENT_API_KEY", "EMPTY"),
+                "model": os.getenv("TOOL_AGENT_MODEL", "qwen3-4B"),
+                "enable_thinking": os.getenv("TOOL_AGENT_ENABLE_THINKING", "true").lower()
+                == "true",
+                "temperature": float(os.getenv("TOOL_AGENT_TEMPERATURE", "0.7")),
+                "max_tokens": int(os.getenv("TOOL_AGENT_MAX_TOKENS", "4096")),
+                "max_rounds": int(os.getenv("TOOL_AGENT_MAX_ROUNDS", "6")),
+                "search_top_k": int(os.getenv("TOOL_AGENT_SEARCH_TOP_K", "5")),
+                # Inherited MultiModalStructMemReaderConfig fields (identical to standard multimodal_struct)
+                "llm": APIConfig.get_memreader_config(),
+                "general_llm": APIConfig.get_memreader_general_llm_config(),
+                "image_parser_llm": APIConfig.get_image_parser_llm_config(),
+                "embedder": APIConfig.get_embedder_config(),
+                "chunker": {
+                    "backend": "sentence",
+                    "config": {
+                        "save_rawfile": os.getenv(
+                            "MEM_READER_SAVE_RAWFILENODE", "true"
+                        ).lower()
+                        == "true",
+                        "tokenizer_or_token_counter": "gpt2",
+                        "chunk_size": 512,
+                        "chunk_overlap": 128,
+                        "min_sentences_per_chunk": 1,
+                    },
+                },
+                "chat_chunker": reader_config,
+                "direct_markdown_hostnames": [
+                    h.strip()
+                    for h in os.getenv(
+                        "FILE_PARSER_DIRECT_MARKDOWN_HOSTNAMES", "139.196.232.20"
+                    ).split(",")
+                    if h.strip()
+                ],
+                "oss_config": APIConfig.get_oss_config(),
+                "skills_dir_config": {
+                    "skills_oss_dir": os.getenv("SKILLS_OSS_DIR", "skill_memory/"),
+                    "skills_local_tmp_dir": os.getenv(
+                        "SKILLS_LOCAL_TMP_DIR", "/tmp/skill_memory/"
+                    ),
+                    "skills_local_dir": os.getenv(
+                        "SKILLS_LOCAL_DIR", "/tmp/upload_skill_memory/"
+                    ),
+                },
+            },
+        }
+
+    @staticmethod
+    def get_mem_reader_full_config() -> dict[str, Any]:
+        """Route mem_reader config by MEM_READER_BACKEND env var.
+
+        MEM_READER_BACKEND=tool_agent  -> get_tool_agent_mem_reader_config()
+        other values                   -> standard reader (behavior unchanged)
+        """
+        backend = os.getenv("MEM_READER_BACKEND", "multimodal_struct")
+        if backend == "tool_agent":
+            return APIConfig.get_tool_agent_mem_reader_config()
+
+        # Standard logic (unchanged from original)
+        reader_config = APIConfig.get_reader_config()
+        return {
+            "backend": reader_config["backend"],
+            "config": {
+                "llm": APIConfig.get_memreader_config(),
+                "general_llm": APIConfig.get_memreader_general_llm_config(),
+                "image_parser_llm": APIConfig.get_image_parser_llm_config(),
+                "embedder": APIConfig.get_embedder_config(),
+                "chunker": {
+                    "backend": "sentence",
+                    "config": {
+                        "save_rawfile": os.getenv(
+                            "MEM_READER_SAVE_RAWFILENODE", "true"
+                        ).lower()
+                        == "true",
+                        "tokenizer_or_token_counter": "gpt2",
+                        "chunk_size": 512,
+                        "chunk_overlap": 128,
+                        "min_sentences_per_chunk": 1,
+                    },
+                },
+                "chat_chunker": reader_config,
+                "direct_markdown_hostnames": [
+                    h.strip()
+                    for h in os.getenv(
+                        "FILE_PARSER_DIRECT_MARKDOWN_HOSTNAMES", "139.196.232.20"
+                    ).split(",")
+                    if h.strip()
+                ],
+                "oss_config": APIConfig.get_oss_config(),
+                "skills_dir_config": {
+                    "skills_oss_dir": os.getenv("SKILLS_OSS_DIR", "skill_memory/"),
+                    "skills_local_tmp_dir": os.getenv(
+                        "SKILLS_LOCAL_TMP_DIR", "/tmp/skill_memory/"
+                    ),
+                    "skills_local_dir": os.getenv(
+                        "SKILLS_LOCAL_DIR", "/tmp/upload_skill_memory/"
+                    ),
+                },
+            },
+        }
+
+    @staticmethod
     def get_product_default_config() -> dict[str, Any]:
         """Get default configuration for Product API."""
         openai_config = APIConfig.get_openai_config()
@@ -928,46 +1054,7 @@ class APIConfig:
         config = {
             "user_id": os.getenv("MOS_USER_ID", "root"),
             "chat_model": {"backend": backend, "config": backend_model[backend]},
-            "mem_reader": {
-                "backend": reader_config["backend"],
-                "config": {
-                    "llm": APIConfig.get_memreader_config(),
-                    # General LLM for non-chat/doc tasks (hallucination filter, rewrite, merge, etc.)
-                    "general_llm": APIConfig.get_memreader_general_llm_config(),
-                    # Image parser LLM (requires vision model)
-                    "image_parser_llm": APIConfig.get_image_parser_llm_config(),
-                    "embedder": APIConfig.get_embedder_config(),
-                    "chunker": {
-                        "backend": "sentence",
-                        "config": {
-                            "save_rawfile": os.getenv("MEM_READER_SAVE_RAWFILENODE", "true").lower()
-                            == "true",
-                            "tokenizer_or_token_counter": "gpt2",
-                            "chunk_size": 512,
-                            "chunk_overlap": 128,
-                            "min_sentences_per_chunk": 1,
-                        },
-                    },
-                    "chat_chunker": reader_config,
-                    "direct_markdown_hostnames": [
-                        h.strip()
-                        for h in os.getenv(
-                            "FILE_PARSER_DIRECT_MARKDOWN_HOSTNAMES", "139.196.232.20"
-                        ).split(",")
-                        if h.strip()
-                    ],
-                    "oss_config": APIConfig.get_oss_config(),
-                    "skills_dir_config": {
-                        "skills_oss_dir": os.getenv("SKILLS_OSS_DIR", "skill_memory/"),
-                        "skills_local_tmp_dir": os.getenv(
-                            "SKILLS_LOCAL_TMP_DIR", "/tmp/skill_memory/"
-                        ),
-                        "skills_local_dir": os.getenv(
-                            "SKILLS_LOCAL_DIR", "/tmp/upload_skill_memory/"
-                        ),
-                    },
-                },
-            },
+            "mem_reader": APIConfig.get_mem_reader_full_config(),
             "enable_textual_memory": True,
             "enable_activation_memory": os.getenv("ENABLE_ACTIVATION_MEMORY", "false").lower()
             == "true",
@@ -1054,29 +1141,7 @@ class APIConfig:
                 "backend": backend,
                 "config": backend_model[backend],
             },
-            "mem_reader": {
-                "backend": reader_config["backend"],
-                "config": {
-                    "llm": APIConfig.get_memreader_config(),
-                    # General LLM for non-chat/doc tasks (hallucination filter, rewrite, merge, etc.)
-                    "general_llm": APIConfig.get_memreader_general_llm_config(),
-                    # Image parser LLM (requires vision model)
-                    "image_parser_llm": APIConfig.get_image_parser_llm_config(),
-                    "embedder": APIConfig.get_embedder_config(),
-                    "chunker": {
-                        "backend": "sentence",
-                        "config": {
-                            "save_rawfile": os.getenv("MEM_READER_SAVE_RAWFILENODE", "true").lower()
-                            == "true",
-                            "tokenizer_or_token_counter": "gpt2",
-                            "chunk_size": 512,
-                            "chunk_overlap": 128,
-                            "min_sentences_per_chunk": 1,
-                        },
-                    },
-                    "chat_chunker": reader_config,
-                },
-            },
+            "mem_reader": APIConfig.get_mem_reader_full_config(),
             "enable_textual_memory": True,
             "enable_activation_memory": os.getenv("ENABLE_ACTIVATION_MEMORY", "false").lower()
             == "true",

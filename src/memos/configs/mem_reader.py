@@ -84,6 +84,26 @@ class StrategyStructMemReaderConfig(BaseMemReaderConfig):
     model_config = ConfigDict(extra="allow", strict=True)
 
 
+class ToolAgentMemReaderConfig(MultiModalStructMemReaderConfig):
+    """
+    ToolAgent MemReader configuration.
+
+    Extends MultiModalStructMemReaderConfig with additional 4B ReAct service parameters.
+    Chat-type string_fine extraction is handled by a 4B model via HTTP tool calling API;
+    all other logic (doc processing, skill/tool/pref extraction, embedding) is inherited
+    from MultiModalStructMemReader.
+    """
+
+    api_url: str = Field(..., description="HTTP endpoint for the 4B tool calling service")
+    api_key: str = Field(default="EMPTY", description="API key / Bearer token for the service")
+    model: str = Field(default="qwen3-4B", description="Model name to send to the service")
+    enable_thinking: bool = Field(default=True, description="Enable chain-of-thought / thinking mode")
+    temperature: float = Field(default=0.7, description="Sampling temperature")
+    max_tokens: int = Field(default=4096, description="Maximum tokens per API call")
+    max_rounds: int = Field(default=6, description="Maximum tool-calling rounds per ReAct loop")
+    search_top_k: int = Field(default=5, description="Top-K results returned by the search_memory tool")
+
+
 class MemReaderConfigFactory(BaseConfig):
     """Factory class for creating MemReader configurations."""
 
@@ -94,6 +114,7 @@ class MemReaderConfigFactory(BaseConfig):
         "simple_struct": SimpleStructMemReaderConfig,
         "multimodal_struct": MultiModalStructMemReaderConfig,
         "strategy_struct": StrategyStructMemReaderConfig,
+        "tool_agent": ToolAgentMemReaderConfig,
     }
 
     @field_validator("backend")

@@ -5,6 +5,7 @@ from memos.mem_reader.base import BaseMemReader
 from memos.mem_reader.multi_modal_struct import MultiModalStructMemReader
 from memos.mem_reader.simple_struct import SimpleStructMemReader
 from memos.mem_reader.strategy_struct import StrategyStructMemReader
+from memos.mem_reader.tool_agent_struct import ToolAgentMemReader
 from memos.memos_tools.singleton import singleton_factory
 
 
@@ -20,6 +21,7 @@ class MemReaderFactory(BaseMemReader):
         "simple_struct": SimpleStructMemReader,
         "strategy_struct": StrategyStructMemReader,
         "multimodal_struct": MultiModalStructMemReader,
+        "tool_agent": ToolAgentMemReader,
     }
 
     @classmethod
