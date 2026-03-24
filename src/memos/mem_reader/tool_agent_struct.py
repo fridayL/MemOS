@@ -10,9 +10,11 @@ Design:
 - search_memory invokes MemOS's own searcher
 """
 
+import contextlib
 import json
 import threading
 import time
+
 from typing import TYPE_CHECKING, Any
 
 import requests
@@ -243,8 +245,8 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                     role = str(src.get("role") or "user")
                     content = str(src.get("content") or "")
                 elif hasattr(src, "role"):
-                    role = str(getattr(src, "role") or "user")
-                    content = str(getattr(src, "content") or "")
+                    role = str(src.role or "user")
+                    content = str(src.content or "")
                 else:
                     continue
                 key = (role, content)
@@ -252,14 +254,12 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                     seen.add(key)
                     all_msgs.append({"role": role, "content": content})
 
-        logger.info(
-            f"[ToolAgentMemReader] reconstructed {len(all_msgs)} messages from sources"
-        )
+        logger.info(f"[ToolAgentMemReader] reconstructed {len(all_msgs)} messages from sources")
 
         if not all_msgs:
             logger.info(
-                f"[ToolAgentMemReader] No messages reconstructed from sources, "
-                f"falling back to parent _process_string_fine."
+                "[ToolAgentMemReader] No messages reconstructed from sources, "
+                "falling back to parent _process_string_fine."
             )
             return super()._process_string_fine(fast_memory_items, info, custom_tags, **kwargs)
 
@@ -277,17 +277,21 @@ class ToolAgentMemReader(MultiModalStructMemReader):
             user_name=user_name,
         )
 
-        logger.info(
-            f"[ToolAgentMemReader] _react_loop returned {len(raw_memories)} raw memories"
-        )
+        if raw_memories is None:
+            logger.warning(
+                f"[ToolAgentMemReader] _react_loop exceeded max rounds for user={user_id}, "
+                f"falling back to parent _process_string_fine."
+            )
+            return super()._process_string_fine(fast_memory_items, info, custom_tags, **kwargs)
+
+        logger.info(f"[ToolAgentMemReader] _react_loop returned {len(raw_memories)} raw memories")
 
         if not raw_memories:
             return []
 
         # Build sources list for provenance tracking
         sources = [
-            {"type": "chat", "role": m["role"], "content": m["content"][:200]}
-            for m in all_msgs
+            {"type": "chat", "role": m["role"], "content": m["content"][:200]} for m in all_msgs
         ]
 
         # Convert to TextualMemoryItem; embeddings are computed by _make_memory_item
@@ -312,15 +316,12 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                     need_embed=True,
                 )
                 result.append(node)
-                logger.info(
-                    f"[ToolAgentMemReader] _make_memory_item done: key={mem.get('key')!r}"
-                )
+                logger.info(f"[ToolAgentMemReader] _make_memory_item done: key={mem.get('key')!r}")
             except Exception as e:
                 logger.info(f"[ToolAgentMemReader] Error making memory item: {e}")
 
         logger.info(
-            f"[ToolAgentMemReader] _process_string_fine: {len(result)} items "
-            f"for user={user_id}"
+            f"[ToolAgentMemReader] _process_string_fine: {len(result)} items for user={user_id}"
         )
         return result
 
@@ -356,13 +357,14 @@ class ToolAgentMemReader(MultiModalStructMemReader):
         turn_msgs: list[dict],
         info: dict[str, Any] | None = None,
         user_name: str | None = None,
-    ) -> list[dict]:
+    ) -> list[dict] | None:
         """
         Execute the ReAct tool-calling loop for a single batch of messages.
 
         Returns:
             list of raw memory dicts: [{value, memory_type, tags, key, background}, ...]
             buffer_memory / ignore_memory -> returns empty list
+            None -> max rounds exceeded, caller should fallback to parent extraction
         """
         logger.info(
             f"[ToolAgentMemReader] _react_loop start: user={user_id} "
@@ -378,8 +380,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
         buffer_summary = ""
         if buf:
             buffer_summary = "\n".join(
-                f"[{m.get('role', '')}]: {str(m.get('content', ''))[:120]}"
-                for m in buf[-6:]
+                f"[{m.get('role', '')}]: {str(m.get('content', ''))[:120]}" for m in buf[-6:]
             )
 
         system_prompt = _build_system_prompt(buffer_summary, session_time)
@@ -388,8 +389,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
             f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in turn_msgs
         )
         user_content = (
-            "Please analyze the following conversation and decide what to store:\n\n"
-            + convo_text
+            "Please analyze the following conversation and decide what to store:\n\n" + convo_text
         )
 
         messages: list[dict] = [
@@ -458,9 +458,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                     user_id, query, info=info, user_name=user_name
                 )
                 result_text = (
-                    "\n".join(search_results)
-                    if search_results
-                    else "No relevant memories found."
+                    "\n".join(search_results) if search_results else "No relevant memories found."
                 )
                 logger.info(
                     f"[ToolAgentMemReader] search_memory query={query!r} "
@@ -518,8 +516,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                         f"attempting extraction from buffered content"
                     )
                     buf_convo = "\n".join(
-                        f"[{m.get('role', 'user')}]: {m.get('content', '')}"
-                        for m in new_buf
+                        f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in new_buf
                     )
                     extract_messages: list[dict] = [
                         {"role": "system", "content": _build_system_prompt("", session_time)},
@@ -537,9 +534,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                         extract_choices = extract_resp.get("choices", [])
                         if extract_choices:
                             extract_tc = (
-                                extract_choices[0]
-                                .get("message", {})
-                                .get("tool_calls") or []
+                                extract_choices[0].get("message", {}).get("tool_calls") or []
                             )
                             if extract_tc:
                                 tc = extract_tc[0]
@@ -575,31 +570,26 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                                         f"model chose {tc_name}, no extraction"
                                     )
                     except Exception as e:
-                        logger.info(
-                            f"[ToolAgentMemReader] buffer extraction failed: {e}"
-                        )
+                        logger.info(f"[ToolAgentMemReader] buffer extraction failed: {e}")
                 return []
 
             # --- ignore_memory: return empty directly ---
             elif tool_name == "ignore_memory":
                 reason = arguments.get("reason", "")
                 logger.info(
-                    f"[ToolAgentMemReader] ignore_memory for user={user_id} "
-                    f"reason={reason!r}"
+                    f"[ToolAgentMemReader] ignore_memory for user={user_id} reason={reason!r}"
                 )
                 return []
 
             else:
-                logger.info(
-                    f"[ToolAgentMemReader] Unknown tool: {tool_name}, ignoring."
-                )
+                logger.info(f"[ToolAgentMemReader] Unknown tool: {tool_name}, ignoring.")
                 return []
 
-        logger.info(
+        logger.warning(
             f"[ToolAgentMemReader] Max rounds ({self.config.max_rounds}) exceeded "
-            f"for user={user_id}, ignoring."
+            f"for user={user_id}, will fallback to parent extraction."
         )
-        return []
+        return None
 
     # ------------------------------------------------------------------
     # API call (with retries)
@@ -616,9 +606,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
             "max_tokens": self.config.max_tokens,
         }
         if self.config.enable_thinking:
-            payload["extra_body"] = {
-                "chat_template_kwargs": {"enable_thinking": True}
-            }
+            payload["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
 
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
@@ -660,10 +648,8 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                 if attempt < 2:
                     err_body = ""
                     if hasattr(e, "response") and e.response is not None:
-                        try:
+                        with contextlib.suppress(Exception):
                             err_body = e.response.text[:300]
-                        except Exception:
-                            pass
                     logger.info(
                         f"[ToolAgentMemReader] API attempt {attempt + 1}/3 failed "
                         f"after {elapsed:.2f}s, retrying in {delay}s: {e} | body: {err_body}"

@@ -184,6 +184,7 @@ class MemosApiClient:
                 "mode": os.getenv("SEARCH_MODE", "fast"),
                 "include_preference": True,
                 "pref_top_k": 6,
+                "relativity": 0.00,
             },
             ensure_ascii=False,
         )
