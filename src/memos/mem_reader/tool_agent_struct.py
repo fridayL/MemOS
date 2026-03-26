@@ -279,7 +279,8 @@ class ToolAgentMemReader(MultiModalStructMemReader):
 
         if raw_memories is None:
             logger.warning(
-                f"[ToolAgentMemReader] _react_loop exceeded max rounds for user={user_id}, "
+                f"[ToolAgentMemReader] _react_loop returned None for user={user_id} "
+                f"(max rounds exceeded or buffer fallback), "
                 f"falling back to parent _process_string_fine."
             )
             return super()._process_string_fine(fast_memory_items, info, custom_tags, **kwargs)
@@ -500,78 +501,15 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                     if (m.get("value") or "").strip()
                 ]
 
-            # --- buffer_memory: buffer current turn, attempt extraction from accumulated buffer ---
+            # --- buffer_memory: fallback to parent LLM extraction ---
             elif tool_name == "buffer_memory":
                 reason = arguments.get("reason", "")
-                new_buf = buf + turn_msgs
-                self._set_buffer(user_id, new_buf, user_name)
                 logger.info(
                     f"[ToolAgentMemReader] buffer_memory for user={user_id}, "
-                    f"reason={reason!r} buffer_size={len(new_buf)}"
+                    f"reason={reason!r}, falling back to parent LLM extraction"
                 )
-                # If buffer has accumulated enough messages, attempt model-based extraction
-                if len(new_buf) >= 4:
-                    logger.info(
-                        f"[ToolAgentMemReader] buffer large enough ({len(new_buf)} msgs), "
-                        f"attempting extraction from buffered content"
-                    )
-                    buf_convo = "\n".join(
-                        f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in new_buf
-                    )
-                    extract_messages: list[dict] = [
-                        {"role": "system", "content": _build_system_prompt("", session_time)},
-                        {
-                            "role": "user",
-                            "content": (
-                                "The following conversation has been buffered across multiple turns. "
-                                "Please review and extract any valuable information now:\n\n"
-                                + buf_convo
-                            ),
-                        },
-                    ]
-                    try:
-                        extract_resp = self._call_api(extract_messages)
-                        extract_choices = extract_resp.get("choices", [])
-                        if extract_choices:
-                            extract_tc = (
-                                extract_choices[0].get("message", {}).get("tool_calls") or []
-                            )
-                            if extract_tc:
-                                tc = extract_tc[0]
-                                tc_name = tc.get("function", {}).get("name", "")
-                                try:
-                                    tc_args = json.loads(
-                                        tc.get("function", {}).get("arguments", "{}")
-                                    )
-                                except json.JSONDecodeError:
-                                    tc_args = {}
-                                if tc_name == "add_memory":
-                                    mem_list = tc_args.get("memory_list", [])
-                                    summary = tc_args.get("summary", "")
-                                    logger.info(
-                                        f"[ToolAgentMemReader] buffer extraction succeeded: "
-                                        f"extracted {len(mem_list)} memories from buffer"
-                                    )
-                                    self._clear_buffer(user_id, user_name)
-                                    return [
-                                        {
-                                            "value": (m.get("value") or "").strip(),
-                                            "memory_type": m.get("memory_type") or "LongTermMemory",
-                                            "tags": m.get("tags") or [],
-                                            "key": m.get("key") or "",
-                                            "background": summary,
-                                        }
-                                        for m in mem_list
-                                        if (m.get("value") or "").strip()
-                                    ]
-                                else:
-                                    logger.info(
-                                        f"[ToolAgentMemReader] buffer extraction: "
-                                        f"model chose {tc_name}, no extraction"
-                                    )
-                    except Exception as e:
-                        logger.info(f"[ToolAgentMemReader] buffer extraction failed: {e}")
-                return []
+                self._clear_buffer(user_id, user_name)
+                return None
 
             # --- ignore_memory: return empty directly ---
             elif tool_name == "ignore_memory":
