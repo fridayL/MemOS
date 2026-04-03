@@ -244,11 +244,15 @@ class ToolAgentMemReader(MultiModalStructMemReader):
                 if isinstance(src, dict):
                     role = str(src.get("role") or "user")
                     content = str(src.get("content") or "")
+                    chat_time = src.get("chat_time") or ""
                 elif hasattr(src, "role"):
                     role = str(src.role or "user")
                     content = str(src.content or "")
+                    chat_time = str(getattr(src, "chat_time", "") or "")
                 else:
                     continue
+                if chat_time and not content.startswith(f"[{chat_time}]"):
+                    content = f"[{chat_time}] {content}"
                 key = (role, content)
                 if content and key not in seen:
                     seen.add(key)
@@ -428,9 +432,10 @@ class ToolAgentMemReader(MultiModalStructMemReader):
             if not tool_calls:
                 logger.info(
                     f"[ToolAgentMemReader] No tool call "
-                    f"(finish_reason={choice.get('finish_reason')}), ignoring."
+                    f"(finish_reason={choice.get('finish_reason')}), "
+                    f"falling back to parent LLM extraction."
                 )
-                return []
+                return None
 
             # Only process the first tool_call per round, discard the rest
             first_call = tool_calls[0]
@@ -539,7 +544,7 @@ class ToolAgentMemReader(MultiModalStructMemReader):
             "model": self.config.model,
             "messages": messages,
             "tools": _TOOLS,
-            "tool_choice": "required",
+            "tool_choice": "auto",
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
         }
