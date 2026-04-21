@@ -2,7 +2,7 @@
 
 # Common parameters for all scripts
 LIB="memos-api"
-VERSION="default"
+VERSION="react-4b-memreader-removemerge-updatetools-032702"
 WORKERS=10
 TOPK=20
 
